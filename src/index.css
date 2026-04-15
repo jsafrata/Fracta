@@ -126,7 +126,7 @@ input::-webkit-inner-spin-button {
 /* ─── Prep Overlay ───────────────────────────────────────────── */
 .prep-overlay {
   position: fixed;
-  top: 0;
+  bottom: 0;
   right: 0;
   margin: 16px;
   z-index: 50;
