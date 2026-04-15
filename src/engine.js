@@ -2,7 +2,8 @@
 export const NUM_PLAYERS = 4;
 export const NUM_COMMODITIES = 5;
 export const NUM_TICKS = 30;
-export const TICK_DURATION = 5000; // ms
+export const TICK_DURATION = 10000; // ms
+export const PREP_DURATION = 10000; // ms — pre-game scan window
 export const STARTING_CASH = 100;
 export const CARDS_PER_PLAYER = 10;
 export const CARDS_PER_COMMODITY_TOTAL = 8; // across all players
@@ -344,74 +345,109 @@ export function processActions(state, actions) {
 }
 
 // ─── Bot AI ──────────────────────────────────────────────────────
+// Three distinct personalities (indexed by botId 1/2/3):
+//   1 — α Maker:     posts tight quotes often, accepts only clear edges
+//   2 — β Taker:     rarely posts, snaps up any profitable quote fast
+//   3 — γ Inferrer:  weights trade history heavily, balanced post/take
+const BOT_PROFILES = {
+  1: { acceptThreshold: 1.5, acceptProb: 0.7, postProb: 0.6, spreadMult: 1.0, inferenceWeight: 0.5 },
+  2: { acceptThreshold: 0.4, acceptProb: 0.95, postProb: 0.2, spreadMult: 0.6, inferenceWeight: 0.7 },
+  3: { acceptThreshold: 1.0, acceptProb: 0.8, postProb: 0.45, spreadMult: 0.9, inferenceWeight: 1.0 },
+};
+
+// Refine unknown-commodity value estimates using recent trade prices.
+// Known values pin at truth; unknowns blend the 5.5 prior with observed trades.
+function estimateCommodityValues(view, inferenceWeight) {
+  const { knownValues, tradeLog } = view;
+  const estimated = Array(NUM_COMMODITIES).fill(0);
+  const confidence = Array(NUM_COMMODITIES).fill(0);
+
+  for (let j = 0; j < NUM_COMMODITIES; j++) {
+    if (knownValues[j] !== undefined) {
+      estimated[j] = knownValues[j];
+      confidence[j] = 1.0;
+      continue;
+    }
+    const recent = tradeLog.slice(-30).filter((t) => t.commodity === j);
+    if (recent.length === 0) {
+      estimated[j] = 5.5;
+      confidence[j] = 0.0;
+      continue;
+    }
+    const avg = recent.reduce((s, t) => s + t.price, 0) / recent.length;
+    // Blend 5.5 prior with observed avg; weight scales with sample size × profile
+    const w = Math.min((recent.length / 4) * inferenceWeight, 0.85);
+    estimated[j] = 5.5 * (1 - w) + avg * w;
+    confidence[j] = w;
+  }
+  return { estimated, confidence };
+}
+
 export function generateBotAction(state, botId) {
   const view = getPlayerView(state, botId);
-  const { cash, inventory, knownValues, orderBook } = view;
+  const { cash, inventory, orderBook } = view;
+  const profile = BOT_PROFILES[botId] || BOT_PROFILES[1];
+  const { estimated, confidence } = estimateCommodityValues(view, profile.inferenceWeight);
 
-  // Estimate values: known exactly, unknown = expected value (5.5)
-  const estimated = Array.from({ length: NUM_COMMODITIES }, (_, j) =>
-    knownValues[j] !== undefined ? knownValues[j] : 5.5
-  );
-
-  // Collect visible quotes from other players
+  // Scan visible quotes
   const quotes = Object.values(orderBook).filter((q) => q.player !== botId);
-  const asks = quotes.filter((q) => q.side === 'ask');
-  const bids = quotes.filter((q) => q.side === 'bid');
-
-  // Find best deal to accept
   let bestAccept = null;
   let bestProfit = 0;
 
-  // Check asks to buy (profitable if ask price < estimated value)
-  for (const ask of asks) {
-    const profit = estimated[ask.commodity] - ask.price;
-    if (profit > bestProfit && cash >= ask.price) {
-      bestProfit = profit;
-      bestAccept = { type: ActionType.ACCEPT, quoteId: ask.id };
+  for (const q of quotes) {
+    if (q.side === 'ask') {
+      const profit = estimated[q.commodity] - q.price;
+      if (profit > bestProfit && cash >= q.price) {
+        bestProfit = profit;
+        bestAccept = { type: ActionType.ACCEPT, quoteId: q.id };
+      }
+    } else {
+      const profit = q.price - estimated[q.commodity];
+      if (profit > bestProfit && inventory[q.commodity] > 0) {
+        bestProfit = profit;
+        bestAccept = { type: ActionType.ACCEPT, quoteId: q.id };
+      }
     }
   }
 
-  // Check bids to sell (profitable if bid price > estimated value)
-  for (const bid of bids) {
-    const profit = bid.price - estimated[bid.commodity];
-    if (profit > bestProfit && inventory[bid.commodity] > 0) {
-      bestProfit = profit;
-      bestAccept = { type: ActionType.ACCEPT, quoteId: bid.id };
-    }
-  }
-
-  // If there's a good deal (profit > 1), take it with high probability
-  if (bestAccept && bestProfit > 1 && Math.random() < 0.8) {
+  if (bestAccept && bestProfit >= profile.acceptThreshold && Math.random() < profile.acceptProb) {
     return bestAccept;
   }
-  if (bestAccept && bestProfit > 0 && Math.random() < 0.5) {
+  if (bestAccept && bestProfit > 0 && Math.random() < profile.acceptProb * 0.35) {
     return bestAccept;
   }
 
-  // Otherwise, consider posting quotes
-  if (Math.random() < 0.3) {
+  // Maybe post a quote
+  if (Math.random() > profile.postProb) {
     return { type: ActionType.NOTHING };
   }
 
-  // Pick a random commodity to quote on
-  const j = Math.floor(Math.random() * NUM_COMMODITIES);
+  // Prefer commodities the bot has strong opinions on (known or well-inferred)
+  const weights = confidence.map((c) => 0.2 + c);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let j = 0;
+  for (; j < NUM_COMMODITIES - 1; j++) {
+    r -= weights[j];
+    if (r <= 0) break;
+  }
+
   const ev = estimated[j];
+  // Wider spread when uncertain; profile scales overall tightness
+  const baseSpread = (1 + (1 - confidence[j]) * 3) * profile.spreadMult;
+  const jitter = (Math.random() - 0.5) * 1.2;
 
-  // Spread depends on certainty
-  const isKnown = knownValues[j] !== undefined;
-  const spread = isKnown ? randInt(1, 2) : randInt(2, 4);
+  // Inventory pressure: skew toward selling when holding many, buying when few
+  const holding = inventory[j];
+  const sellBias = holding >= 3 ? 0.7 : holding === 0 ? 0.0 : 0.5;
 
-  if (Math.random() < 0.5) {
-    // Post bid
-    const bidPrice = Math.max(PRICE_MIN, Math.round(ev - spread / 2 + (Math.random() - 0.5) * 2));
-    if (bidPrice >= PRICE_MIN && bidPrice <= PRICE_MAX && cash >= bidPrice) {
-      return { type: ActionType.POST_BID, commodity: j, price: bidPrice };
-    }
+  if (Math.random() < sellBias && holding > 0) {
+    const askPrice = Math.min(PRICE_MAX, Math.max(PRICE_MIN, Math.round(ev + baseSpread / 2 + jitter)));
+    return { type: ActionType.POST_ASK, commodity: j, price: askPrice };
   } else {
-    // Post ask
-    const askPrice = Math.min(PRICE_MAX, Math.round(ev + spread / 2 + (Math.random() - 0.5) * 2));
-    if (askPrice >= PRICE_MIN && askPrice <= PRICE_MAX && inventory[j] > 0) {
-      return { type: ActionType.POST_ASK, commodity: j, price: askPrice };
+    const bidPrice = Math.min(PRICE_MAX, Math.max(PRICE_MIN, Math.round(ev - baseSpread / 2 + jitter)));
+    if (cash >= bidPrice) {
+      return { type: ActionType.POST_BID, commodity: j, price: bidPrice };
     }
   }
 

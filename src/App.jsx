@@ -9,6 +9,7 @@ import {
   NUM_COMMODITIES,
   NUM_TICKS,
   TICK_DURATION,
+  PREP_DURATION,
   PRICE_MIN,
   PRICE_MAX,
   COMMODITY_NAMES,
@@ -27,7 +28,7 @@ function StartScreen({ onStart }) {
     <div className="start-screen">
       <div className="start-content">
         <div className="start-logo">⬡</div>
-        <h1 className="start-title">COMMODITY EXCHANGE</h1>
+        <h1 className="start-title">FRACTA</h1>
         <p className="start-subtitle">
           A 4-player information-asymmetry trading game
         </p>
@@ -46,7 +47,7 @@ function StartScreen({ onStart }) {
           </div>
           <div className="rule-item">
             <span className="rule-icon">◈</span>
-            <span>30 ticks × 5 seconds. Maximize cash + liquidation value.</span>
+            <span>10s prep, then 30 ticks × 10 seconds. Maximize cash + liquidation value.</span>
           </div>
         </div>
         <button className="start-btn" onClick={onStart}>
@@ -180,6 +181,7 @@ function OrderBookDisplay({ orderBook, commodity, onAccept }) {
 function CommodityPanel({
   index,
   view,
+  isPrep,
   pendingAction,
   onPostBid,
   onPostAsk,
@@ -223,7 +225,7 @@ function CommodityPanel({
       <OrderBookDisplay
         orderBook={view.orderBook}
         commodity={index}
-        onAccept={onAccept}
+        onAccept={isPrep ? () => {} : onAccept}
       />
 
       <div className="cp-actions">
@@ -247,7 +249,7 @@ function CommodityPanel({
                   setBidPrice('');
                 }
               }}
-              disabled={view.gameOver}
+              disabled={view.gameOver || isPrep}
             >
               POST BID
             </button>
@@ -271,7 +273,7 @@ function CommodityPanel({
                   setAskPrice('');
                 }
               }}
-              disabled={view.gameOver || holding < 1}
+              disabled={view.gameOver || isPrep || holding < 1}
             >
               POST ASK
             </button>
@@ -404,10 +406,12 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState(null);
   const [timeLeft, setTimeLeft] = useState(TICK_DURATION / 1000);
   const [started, setStarted] = useState(false);
+  const [prepTimeLeft, setPrepTimeLeft] = useState(0);
   const gameRef = useRef(null);
   const pendingRef = useRef(null);
   const tickTimerRef = useRef(null);
   const countdownRef = useRef(null);
+  const prepTimerRef = useRef(null);
 
   // Keep refs in sync
   useEffect(() => {
@@ -423,11 +427,29 @@ export default function App() {
     setPendingAction(null);
     setStarted(true);
     setTimeLeft(TICK_DURATION / 1000);
+    setPrepTimeLeft(PREP_DURATION / 1000);
   }, []);
+
+  // Prep countdown (runs once at start, before first tick)
+  useEffect(() => {
+    if (!started || !gameState) return;
+    if (prepTimeLeft <= 0) return;
+
+    const prepStart = Date.now();
+    prepTimerRef.current = setInterval(() => {
+      const elapsed = (Date.now() - prepStart) / 1000;
+      const remaining = Math.max(0, PREP_DURATION / 1000 - elapsed);
+      setPrepTimeLeft(remaining);
+      if (remaining <= 0) clearInterval(prepTimerRef.current);
+    }, 100);
+
+    return () => clearInterval(prepTimerRef.current);
+  }, [started, gameState?.tick === 0 && prepTimeLeft > 0]);
 
   // Tick loop
   useEffect(() => {
     if (!started || !gameState || gameState.gameOver) return;
+    if (prepTimeLeft > 0) return;
 
     const tickStart = Date.now();
 
@@ -460,7 +482,7 @@ export default function App() {
       clearInterval(countdownRef.current);
       clearTimeout(tickTimerRef.current);
     };
-  }, [started, gameState?.tick, gameState?.gameOver]);
+  }, [started, gameState?.tick, gameState?.gameOver, prepTimeLeft > 0]);
 
   // Action handlers
   const handlePostBid = useCallback((commodity, price) => {
@@ -487,6 +509,7 @@ export default function App() {
   }
 
   const view = getPlayerView(gameState, 0);
+  const isPrep = prepTimeLeft > 0;
 
   // Estimate total wealth
   const estWealth =
@@ -507,6 +530,7 @@ export default function App() {
               key={j}
               index={j}
               view={view}
+              isPrep={isPrep}
               pendingAction={
                 pendingAction &&
                 (pendingAction.commodity === j ||
@@ -562,6 +586,20 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {isPrep && (
+        <div className="prep-overlay">
+          <div className="prep-card">
+            <div className="prep-label">GET READY</div>
+            <div className="prep-countdown">{Math.ceil(prepTimeLeft)}</div>
+            <div className="prep-hint">
+              Review your commodities and known true values.
+              <br />
+              Trading opens when the countdown hits zero.
+            </div>
+          </div>
+        </div>
+      )}
 
       {view.gameOver && (
         <GameOverScreen view={view} onRestart={startGame} />

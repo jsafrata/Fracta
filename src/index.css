@@ -123,6 +123,48 @@ input::-webkit-inner-spin-button {
   box-shadow: 0 4px 20px rgba(255, 215, 64, 0.3);
 }
 
+/* ─── Prep Overlay ───────────────────────────────────────────── */
+.prep-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  margin: 16px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.prep-card {
+  background: var(--surface);
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  padding: 16px 22px;
+  text-align: center;
+  box-shadow: 0 6px 28px rgba(255, 215, 64, 0.25);
+  min-width: 240px;
+}
+
+.prep-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 3px;
+  margin-bottom: 6px;
+}
+
+.prep-countdown {
+  font-size: 44px;
+  font-weight: 700;
+  color: var(--amber);
+  line-height: 1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.prep-hint {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
 /* ─── Game Over ───────────────────────────────────────────────── */
 .gameover-overlay {
   position: fixed;
