@@ -475,7 +475,8 @@ export default function App() {
       const actions = Array(NUM_PLAYERS).fill(null);
       actions[0] = pendingRef.current.length > 0 ? pendingRef.current : [];
       for (let i = 1; i < NUM_PLAYERS; i++) {
-        actions[i] = [generateBotAction(state, i)];
+        const result = generateBotAction(state, i);
+        actions[i] = Array.isArray(result) ? result : [result];
       }
 
       const newState = processActions(state, actions);
