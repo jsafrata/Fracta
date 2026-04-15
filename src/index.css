@@ -362,6 +362,16 @@ input::-webkit-inner-spin-button {
   padding: 10px;
   min-height: 0;
   overflow-y: auto;
+  position: relative;
+}
+
+.commodity-panel.known {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 20px -6px var(--accent);
+}
+
+.commodity-panel.known .cp-dot {
+  box-shadow: 0 0 10px 2px var(--accent);
 }
 
 .cp-header {
@@ -535,67 +545,64 @@ input::-webkit-inner-spin-button {
   gap: 6px;
 }
 
-.cp-input-group {
-  flex: 1;
-  display: flex;
-  gap: 3px;
-}
-
 .cp-input {
-  width: 50px;
+  flex: 1;
+  min-width: 0;
   background: var(--surface2);
   border: 1px solid var(--border);
   color: var(--text-bright);
   font-family: var(--font-mono);
-  font-size: 14px;
-  padding: 4px 6px;
-  border-radius: 3px;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 4px;
   text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.cp-input::placeholder {
+  font-weight: 400;
+  opacity: 0.6;
+  letter-spacing: 1px;
 }
 
 .cp-input:focus {
   outline: none;
-  border-color: var(--amber);
 }
 
-.cp-btn {
-  border: none;
-  padding: 4px 8px;
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-
-.cp-btn:disabled {
-  opacity: 0.3;
+.cp-input:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-.bid-btn {
-  background: var(--green-dim);
+.cp-input-bid {
+  border-color: var(--green-dim);
   color: var(--green);
-  border: 1px solid var(--green);
+  background: var(--green-bg);
 }
 
-.bid-btn:hover:not(:disabled) {
-  background: var(--green);
-  color: #000;
+.cp-input-bid:focus {
+  border-color: var(--green);
+  background: rgba(0, 230, 118, 0.15);
 }
 
-.ask-btn {
-  background: var(--red-dim);
+.cp-input-bid::placeholder {
+  color: var(--green);
+}
+
+.cp-input-ask {
+  border-color: var(--red-dim);
   color: var(--red);
-  border: 1px solid var(--red);
+  background: var(--red-bg);
 }
 
-.ask-btn:hover:not(:disabled) {
-  background: var(--red);
-  color: #fff;
+.cp-input-ask:focus {
+  border-color: var(--red);
+  background: rgba(255, 82, 82, 0.15);
+}
+
+.cp-input-ask::placeholder {
+  color: var(--red);
 }
 
 .cp-active-quotes {

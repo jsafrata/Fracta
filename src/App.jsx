@@ -205,12 +205,31 @@ function CommodityPanel({
   const hasAskOnThis =
     myAskQuote && myAskQuote.commodity === index;
 
+  const isKnown = known !== undefined;
+  const submitBid = () => {
+    const p = parseInt(bidPrice);
+    if (p >= PRICE_MIN && p <= PRICE_MAX) {
+      onPostBid(index, p);
+      setBidPrice('');
+    }
+  };
+  const submitAsk = () => {
+    const p = parseInt(askPrice);
+    if (p >= PRICE_MIN && p <= PRICE_MAX) {
+      onPostAsk(index, p);
+      setAskPrice('');
+    }
+  };
+
   return (
-    <div className="commodity-panel" style={{ '--accent': color }}>
+    <div
+      className={`commodity-panel${isKnown ? ' known' : ''}`}
+      style={{ '--accent': color }}
+    >
       <div className="cp-header">
         <span className="cp-dot" style={{ background: color }} />
         <span className="cp-name">{name}</span>
-        {known !== undefined ? (
+        {isKnown ? (
           <span className="cp-value known">Value: ${known}</span>
         ) : (
           <span className="cp-value unknown">Value: ???</span>
@@ -230,54 +249,32 @@ function CommodityPanel({
 
       <div className="cp-actions">
         <div className="cp-action-row">
-          <div className="cp-input-group bid-group">
-            <input
-              type="number"
-              min={PRICE_MIN}
-              max={PRICE_MAX}
-              placeholder="Bid $"
-              value={bidPrice}
-              onChange={(e) => setBidPrice(e.target.value)}
-              className="cp-input"
-            />
-            <button
-              className="cp-btn bid-btn"
-              onClick={() => {
-                const p = parseInt(bidPrice);
-                if (p >= PRICE_MIN && p <= PRICE_MAX) {
-                  onPostBid(index, p);
-                  setBidPrice('');
-                }
-              }}
-              disabled={view.gameOver || isPrep}
-            >
-              POST BID
-            </button>
-          </div>
-          <div className="cp-input-group ask-group">
-            <input
-              type="number"
-              min={PRICE_MIN}
-              max={PRICE_MAX}
-              placeholder="Ask $"
-              value={askPrice}
-              onChange={(e) => setAskPrice(e.target.value)}
-              className="cp-input"
-            />
-            <button
-              className="cp-btn ask-btn"
-              onClick={() => {
-                const p = parseInt(askPrice);
-                if (p >= PRICE_MIN && p <= PRICE_MAX) {
-                  onPostAsk(index, p);
-                  setAskPrice('');
-                }
-              }}
-              disabled={view.gameOver || isPrep || holding < 1}
-            >
-              POST ASK
-            </button>
-          </div>
+          <input
+            type="number"
+            min={PRICE_MIN}
+            max={PRICE_MAX}
+            placeholder="Bid $ ↵"
+            value={bidPrice}
+            onChange={(e) => setBidPrice(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitBid();
+            }}
+            disabled={view.gameOver || isPrep}
+            className="cp-input cp-input-bid"
+          />
+          <input
+            type="number"
+            min={PRICE_MIN}
+            max={PRICE_MAX}
+            placeholder="Ask $ ↵"
+            value={askPrice}
+            onChange={(e) => setAskPrice(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitAsk();
+            }}
+            disabled={view.gameOver || isPrep || holding < 1}
+            className="cp-input cp-input-ask"
+          />
         </div>
 
         {(hasBidOnThis || hasAskOnThis) && (
