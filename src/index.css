@@ -754,6 +754,48 @@ input::-webkit-inner-spin-button {
   margin-bottom: 6px;
 }
 
+.queued-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  background: rgba(255, 215, 64, 0.08);
+  border: 1px solid var(--amber-dim);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--amber);
+}
+
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-remove {
+  background: none;
+  border: none;
+  color: var(--amber);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.queued-remove:hover {
+  opacity: 1;
+  color: var(--red);
+}
+
+.cp-pending-row {
+  padding: 1px 0;
+}
+
 .cancel-action-btn {
   background: var(--surface2);
   border: 1px solid var(--border);

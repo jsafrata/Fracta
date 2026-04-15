@@ -175,34 +175,42 @@ export const ActionType = {
 };
 
 // ─── Process Actions ─────────────────────────────────────────────
-export function processActions(state, actions) {
+// actionsByPlayer[i] may be either a single action object or an array of
+// actions for that player in the current tick. Arrays let the human queue
+// multiple posts/cancels/accepts before the tick executes.
+export function processActions(state, actionsByPlayer) {
   // Deep copy state
   const s = JSON.parse(JSON.stringify(state));
+
+  // Normalize: each player → array of actions
+  const playerActions = Array.from({ length: NUM_PLAYERS }, (_, i) => {
+    const a = actionsByPlayer[i];
+    if (Array.isArray(a)) return a.filter(Boolean);
+    if (a) return [a];
+    return [];
+  });
 
   // 1. Process accepts first (against book from start of tick — posts made
   //    this tick land in step 3 below and can only be accepted next tick)
   const acceptMap = {}; // quoteId -> [playerId, ...]
   for (let i = 0; i < NUM_PLAYERS; i++) {
-    const action = actions[i];
-    if (!action || action.type !== ActionType.ACCEPT) continue;
-    const qid = action.quoteId;
-    if (!s.orderBook[qid]) continue;
+    for (const action of playerActions[i]) {
+      if (action.type !== ActionType.ACCEPT) continue;
+      const qid = action.quoteId;
+      if (!s.orderBook[qid]) continue;
 
-    const quote = s.orderBook[qid];
-    // Can't accept your own quote
-    if (quote.player === i) continue;
+      const quote = s.orderBook[qid];
+      if (quote.player === i) continue;
 
-    // Check if player can afford / has the unit
-    if (quote.side === 'ask') {
-      // Player i is buying
-      if (s.cash[i] < quote.price) continue;
-    } else {
-      // Player i is selling
-      if (s.inventories[i][quote.commodity] < 1) continue;
+      if (quote.side === 'ask') {
+        if (s.cash[i] < quote.price) continue;
+      } else {
+        if (s.inventories[i][quote.commodity] < 1) continue;
+      }
+
+      if (!acceptMap[qid]) acceptMap[qid] = [];
+      acceptMap[qid].push(i);
     }
-
-    if (!acceptMap[qid]) acceptMap[qid] = [];
-    acceptMap[qid].push(i);
   }
 
   // Resolve accepts (random selection if multiple)
@@ -258,48 +266,47 @@ export function processActions(state, actions) {
 
   // 2. Process cancels
   for (let i = 0; i < NUM_PLAYERS; i++) {
-    const action = actions[i];
-    if (!action || action.type !== ActionType.CANCEL_QUOTE) continue;
-    const qid = action.quoteId;
-    const quote = s.orderBook[qid];
-    if (!quote || quote.player !== i) continue;
-    delete s.orderBook[qid];
-    if (quote.side === 'bid') delete s.activeBids[i][quote.commodity];
-    else delete s.activeAsks[i][quote.commodity];
+    for (const action of playerActions[i]) {
+      if (action.type !== ActionType.CANCEL_QUOTE) continue;
+      const qid = action.quoteId;
+      const quote = s.orderBook[qid];
+      if (!quote || quote.player !== i) continue;
+      delete s.orderBook[qid];
+      if (quote.side === 'bid') delete s.activeBids[i][quote.commodity];
+      else delete s.activeAsks[i][quote.commodity];
+    }
   }
 
-  // 3. Process new posts — visible in next tick's view
+  // 3. Process new posts — visible in next tick's view. When a player queues
+  //    multiple posts on the same (commodity, side), later entries replace
+  //    earlier ones naturally via activeBids/Asks bookkeeping.
   for (let i = 0; i < NUM_PLAYERS; i++) {
-    const action = actions[i];
-    if (!action) continue;
+    for (const action of playerActions[i]) {
+      if (action.type === ActionType.POST_BID) {
+        const { commodity, price } = action;
+        if (price < PRICE_MIN || price > PRICE_MAX) continue;
+        if (s.cash[i] < price) continue;
 
-    if (action.type === ActionType.POST_BID) {
-      const { commodity, price } = action;
-      if (price < PRICE_MIN || price > PRICE_MAX) continue;
-      if (s.cash[i] < price) continue;
+        const existing = s.activeBids[i][commodity];
+        if (existing != null) delete s.orderBook[existing];
 
-      // Replace any existing bid on this commodity from this player
-      const existing = s.activeBids[i][commodity];
-      if (existing != null) delete s.orderBook[existing];
+        const id = s.nextQuoteId++;
+        s.orderBook[id] = { id, player: i, side: 'bid', commodity, price, tick: s.tick };
+        s.activeBids[i][commodity] = id;
+      }
 
-      const id = s.nextQuoteId++;
-      const quote = { id, player: i, side: 'bid', commodity, price, tick: s.tick };
-      s.orderBook[id] = quote;
-      s.activeBids[i][commodity] = id;
-    }
+      if (action.type === ActionType.POST_ASK) {
+        const { commodity, price } = action;
+        if (price < PRICE_MIN || price > PRICE_MAX) continue;
+        if (s.inventories[i][commodity] < 1) continue;
 
-    if (action.type === ActionType.POST_ASK) {
-      const { commodity, price } = action;
-      if (price < PRICE_MIN || price > PRICE_MAX) continue;
-      if (s.inventories[i][commodity] < 1) continue;
+        const existing = s.activeAsks[i][commodity];
+        if (existing != null) delete s.orderBook[existing];
 
-      const existing = s.activeAsks[i][commodity];
-      if (existing != null) delete s.orderBook[existing];
-
-      const id = s.nextQuoteId++;
-      const quote = { id, player: i, side: 'ask', commodity, price, tick: s.tick };
-      s.orderBook[id] = quote;
-      s.activeAsks[i][commodity] = id;
+        const id = s.nextQuoteId++;
+        s.orderBook[id] = { id, player: i, side: 'ask', commodity, price, tick: s.tick };
+        s.activeAsks[i][commodity] = id;
+      }
     }
   }
 

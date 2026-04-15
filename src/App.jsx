@@ -182,7 +182,7 @@ function CommodityPanel({
   index,
   view,
   isPrep,
-  pendingAction,
+  queuedActions,
   onPostBid,
   onPostAsk,
   onAccept,
@@ -302,10 +302,14 @@ function CommodityPanel({
         )}
       </div>
 
-      {pendingAction && pendingAction.commodity === index && (
+      {queuedActions && queuedActions.length > 0 && (
         <div className="cp-pending">
-          Queued: {pendingAction.type.replace('_', ' ')}
-          {pendingAction.price != null && ` @ $${pendingAction.price}`}
+          {queuedActions.map((a, i) => (
+            <div key={i} className="cp-pending-row">
+              {a.type.replace(/_/g, ' ')}
+              {a.price != null && ` @ $${a.price}`}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -397,12 +401,12 @@ function PlayersSummary({ view }) {
 // ─── Main App ────────────────────────────────────────────────────
 export default function App() {
   const [gameState, setGameState] = useState(null);
-  const [pendingAction, setPendingAction] = useState(null);
+  const [pendingActions, setPendingActions] = useState([]);
   const [timeLeft, setTimeLeft] = useState(TICK_DURATION / 1000);
   const [started, setStarted] = useState(false);
   const [prepTimeLeft, setPrepTimeLeft] = useState(0);
   const gameRef = useRef(null);
-  const pendingRef = useRef(null);
+  const pendingRef = useRef([]);
   const tickTimerRef = useRef(null);
   const countdownRef = useRef(null);
   const prepTimerRef = useRef(null);
@@ -412,13 +416,13 @@ export default function App() {
     gameRef.current = gameState;
   }, [gameState]);
   useEffect(() => {
-    pendingRef.current = pendingAction;
-  }, [pendingAction]);
+    pendingRef.current = pendingActions;
+  }, [pendingActions]);
 
   const startGame = useCallback(() => {
     const state = initializeGame();
     setGameState(state);
-    setPendingAction(null);
+    setPendingActions([]);
     setStarted(true);
     setTimeLeft(TICK_DURATION / 1000);
     setPrepTimeLeft(PREP_DURATION / 1000);
@@ -459,16 +463,16 @@ export default function App() {
       const state = gameRef.current;
       if (!state || state.gameOver) return;
 
-      // Generate bot actions
+      // Assemble actions (human: full queue; bots: single action each)
       const actions = Array(NUM_PLAYERS).fill(null);
-      actions[0] = pendingRef.current || { type: ActionType.NOTHING };
+      actions[0] = pendingRef.current.length > 0 ? pendingRef.current : [];
       for (let i = 1; i < NUM_PLAYERS; i++) {
-        actions[i] = generateBotAction(state, i);
+        actions[i] = [generateBotAction(state, i)];
       }
 
       const newState = processActions(state, actions);
       setGameState(newState);
-      setPendingAction(null);
+      setPendingActions([]);
       setTimeLeft(TICK_DURATION / 1000);
     }, TICK_DURATION);
 
@@ -478,22 +482,32 @@ export default function App() {
     };
   }, [started, gameState?.tick, gameState?.gameOver, prepTimeLeft > 0]);
 
-  // Action handlers
-  const handlePostBid = useCallback((commodity, price) => {
-    setPendingAction({ type: ActionType.POST_BID, commodity, price });
+  // Action handlers — each queues a new action for this tick
+  const enqueue = useCallback((action) => {
+    setPendingActions((prev) => [...prev, action]);
   }, []);
 
-  const handlePostAsk = useCallback((commodity, price) => {
-    setPendingAction({ type: ActionType.POST_ASK, commodity, price });
-  }, []);
+  const handlePostBid = useCallback(
+    (commodity, price) => enqueue({ type: ActionType.POST_BID, commodity, price }),
+    [enqueue]
+  );
+  const handlePostAsk = useCallback(
+    (commodity, price) => enqueue({ type: ActionType.POST_ASK, commodity, price }),
+    [enqueue]
+  );
+  const handleAccept = useCallback(
+    (quoteId) => enqueue({ type: ActionType.ACCEPT, quoteId }),
+    [enqueue]
+  );
+  const handleCancel = useCallback(
+    (quoteId) => enqueue({ type: ActionType.CANCEL_QUOTE, quoteId }),
+    [enqueue]
+  );
 
-  const handleAccept = useCallback((quoteId) => {
-    setPendingAction({ type: ActionType.ACCEPT, quoteId });
+  const removeQueuedAction = useCallback((idx) => {
+    setPendingActions((prev) => prev.filter((_, i) => i !== idx));
   }, []);
-
-  const handleCancel = useCallback((quoteId) => {
-    setPendingAction({ type: ActionType.CANCEL_QUOTE, quoteId });
-  }, []);
+  const clearAllQueued = useCallback(() => setPendingActions([]), []);
 
   // Render
   if (!started || !gameState) {
@@ -517,26 +531,27 @@ export default function App() {
 
       <div className="main-area">
         <div className="commodity-grid">
-          {Array.from({ length: NUM_COMMODITIES }, (_, j) => (
-            <CommodityPanel
-              key={j}
-              index={j}
-              view={view}
-              isPrep={isPrep}
-              pendingAction={
-                pendingAction &&
-                (pendingAction.commodity === j ||
-                  (pendingAction.quoteId != null &&
-                    view.orderBook[pendingAction.quoteId]?.commodity === j))
-                  ? pendingAction
-                  : null
-              }
-              onPostBid={handlePostBid}
-              onPostAsk={handlePostAsk}
-              onAccept={handleAccept}
-              onCancel={handleCancel}
-            />
-          ))}
+          {Array.from({ length: NUM_COMMODITIES }, (_, j) => {
+            const queuedHere = pendingActions.filter(
+              (a) =>
+                a.commodity === j ||
+                (a.quoteId != null &&
+                  view.orderBook[a.quoteId]?.commodity === j)
+            );
+            return (
+              <CommodityPanel
+                key={j}
+                index={j}
+                view={view}
+                isPrep={isPrep}
+                queuedActions={queuedHere}
+                onPostBid={handlePostBid}
+                onPostAsk={handlePostAsk}
+                onAccept={handleAccept}
+                onCancel={handleCancel}
+              />
+            );
+          })}
         </div>
 
         <div className="sidebar">
@@ -558,21 +573,38 @@ export default function App() {
               </div>
             ))}
           </div>
-          {pendingAction && pendingAction.type !== ActionType.NOTHING && (
+          {pendingActions.length > 0 && (
             <div className="sidebar-section pending-section">
-              <div className="ps-title">QUEUED ACTION</div>
-              <div className="pending-detail">
-                {pendingAction.type.replace(/_/g, ' ').toUpperCase()}
-                {pendingAction.price != null && ` @ $${pendingAction.price}`}
-                {pendingAction.commodity != null &&
-                  ` — ${COMMODITY_NAMES[pendingAction.commodity]}`}
-                {pendingAction.quoteId != null && ` (Quote #${pendingAction.quoteId})`}
+              <div className="ps-title">
+                QUEUED ACTIONS ({pendingActions.length})
               </div>
-              <button
-                className="cancel-action-btn"
-                onClick={() => setPendingAction(null)}
-              >
-                Clear Action
+              {pendingActions.map((a, i) => {
+                const commodity =
+                  a.commodity != null
+                    ? a.commodity
+                    : a.quoteId != null
+                    ? view.orderBook[a.quoteId]?.commodity
+                    : null;
+                return (
+                  <div key={i} className="queued-row">
+                    <span className="queued-text">
+                      {a.type.replace(/_/g, ' ').toUpperCase()}
+                      {commodity != null && ` — ${COMMODITY_NAMES[commodity]}`}
+                      {a.price != null && ` @ $${a.price}`}
+                      {a.quoteId != null && ` #${a.quoteId}`}
+                    </span>
+                    <button
+                      className="queued-remove"
+                      onClick={() => removeQueuedAction(i)}
+                      title="Remove from queue"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+              <button className="cancel-action-btn" onClick={clearAllQueued}>
+                Clear All
               </button>
             </div>
           )}
