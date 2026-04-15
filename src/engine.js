@@ -128,7 +128,6 @@ export function initializeGame() {
     inventories: hands,
     cash,
     orderBook: {}, // id -> { id, player, side, commodity, price, tick }
-    pendingQuotes: {}, // posted this tick, visible next tick
     tick: 0,
     tradeLog: [],
     nextQuoteId: 1,
@@ -180,13 +179,8 @@ export function processActions(state, actions) {
   // Deep copy state
   const s = JSON.parse(JSON.stringify(state));
 
-  // Move pending quotes to visible book
-  for (const [id, quote] of Object.entries(s.pendingQuotes)) {
-    s.orderBook[id] = quote;
-  }
-  s.pendingQuotes = {};
-
-  // 1. Process accepts first
+  // 1. Process accepts first (against book from start of tick — posts made
+  //    this tick land in step 3 below and can only be accepted next tick)
   const acceptMap = {}; // quoteId -> [playerId, ...]
   for (let i = 0; i < NUM_PLAYERS; i++) {
     const action = actions[i];
@@ -278,7 +272,7 @@ export function processActions(state, actions) {
     }
   }
 
-  // 3. Process new posts (go to pending)
+  // 3. Process new posts — visible in next tick's view
   for (let i = 0; i < NUM_PLAYERS; i++) {
     const action = actions[i];
     if (!action) continue;
@@ -288,15 +282,13 @@ export function processActions(state, actions) {
       if (price < PRICE_MIN || price > PRICE_MAX) continue;
       if (s.cash[i] < price) continue;
 
-      // Remove old bid
       if (s.activeBids[i] != null) {
         delete s.orderBook[s.activeBids[i]];
-        delete s.pendingQuotes[s.activeBids[i]];
       }
 
       const id = s.nextQuoteId++;
       const quote = { id, player: i, side: 'bid', commodity, price, tick: s.tick };
-      s.pendingQuotes[id] = quote;
+      s.orderBook[id] = quote;
       s.activeBids[i] = id;
     }
 
@@ -305,15 +297,13 @@ export function processActions(state, actions) {
       if (price < PRICE_MIN || price > PRICE_MAX) continue;
       if (s.inventories[i][commodity] < 1) continue;
 
-      // Remove old ask
       if (s.activeAsks[i] != null) {
         delete s.orderBook[s.activeAsks[i]];
-        delete s.pendingQuotes[s.activeAsks[i]];
       }
 
       const id = s.nextQuoteId++;
       const quote = { id, player: i, side: 'ask', commodity, price, tick: s.tick };
-      s.pendingQuotes[id] = quote;
+      s.orderBook[id] = quote;
       s.activeAsks[i] = id;
     }
   }
