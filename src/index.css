@@ -535,6 +535,21 @@ input::-webkit-inner-spin-button {
   background: #ff7777;
 }
 
+.queued-btn {
+  background: var(--amber);
+  color: #000;
+  font-weight: 700;
+}
+
+.queued-btn:hover {
+  background: #ffe57f;
+}
+
+.ob-queued {
+  outline: 1px solid var(--amber);
+  outline-offset: -1px;
+}
+
 /* ─── Commodity Actions ───────────────────────────────────────── */
 .cp-actions {
   margin-top: auto;
@@ -666,7 +681,15 @@ input::-webkit-inner-spin-button {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 .sidebar-section {
@@ -746,6 +769,16 @@ input::-webkit-inner-spin-button {
 /* ─── Pending Action ──────────────────────────────────────────── */
 .pending-section {
   background: rgba(255, 215, 64, 0.05);
+}
+
+.pending-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  border-top: none;
+  border-bottom: 1px solid var(--amber-dim);
+  background: rgba(255, 215, 64, 0.12);
+  backdrop-filter: blur(4px);
 }
 
 .pending-detail {

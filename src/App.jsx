@@ -112,7 +112,7 @@ function GameOverScreen({ view, onRestart }) {
 }
 
 // ─── Order Book Display ──────────────────────────────────────────
-function OrderBookDisplay({ orderBook, commodity, onAccept }) {
+function OrderBookDisplay({ orderBook, commodity, onAccept, queuedAcceptIds }) {
   const quotes = Object.values(orderBook).filter(
     (q) => q.commodity === commodity
   );
@@ -130,23 +130,26 @@ function OrderBookDisplay({ orderBook, commodity, onAccept }) {
         {bids.length === 0 ? (
           <div className="ob-empty">—</div>
         ) : (
-          bids.map((q) => (
-            <div key={q.id} className="ob-row bid-row">
-              <span className="ob-price">${q.price}</span>
-              <span className="ob-player">
-                {PLAYER_NAMES[q.player].substring(0, 5)}
-              </span>
-              {q.player !== 0 && (
-                <button
-                  className="ob-accept-btn sell-btn-sm"
-                  onClick={() => onAccept(q.id)}
-                  title="Sell to this bidder"
-                >
-                  SELL
-                </button>
-              )}
-            </div>
-          ))
+          bids.map((q) => {
+            const queued = queuedAcceptIds.has(q.id);
+            return (
+              <div key={q.id} className={`ob-row bid-row${queued ? ' ob-queued' : ''}`}>
+                <span className="ob-price">${q.price}</span>
+                <span className="ob-player">
+                  {PLAYER_NAMES[q.player].substring(0, 5)}
+                </span>
+                {q.player !== 0 && (
+                  <button
+                    className={`ob-accept-btn ${queued ? 'queued-btn' : 'sell-btn-sm'}`}
+                    onClick={() => onAccept(q.id)}
+                    title={queued ? 'Already queued — click to queue again' : 'Sell to this bidder'}
+                  >
+                    {queued ? '✓ QUEUED' : 'SELL'}
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
       <div className="ob-side ob-asks">
@@ -154,23 +157,26 @@ function OrderBookDisplay({ orderBook, commodity, onAccept }) {
         {asks.length === 0 ? (
           <div className="ob-empty">—</div>
         ) : (
-          asks.map((q) => (
-            <div key={q.id} className="ob-row ask-row">
-              <span className="ob-price">${q.price}</span>
-              <span className="ob-player">
-                {PLAYER_NAMES[q.player].substring(0, 5)}
-              </span>
-              {q.player !== 0 && (
-                <button
-                  className="ob-accept-btn buy-btn-sm"
-                  onClick={() => onAccept(q.id)}
-                  title="Buy from this seller"
-                >
-                  BUY
-                </button>
-              )}
-            </div>
-          ))
+          asks.map((q) => {
+            const queued = queuedAcceptIds.has(q.id);
+            return (
+              <div key={q.id} className={`ob-row ask-row${queued ? ' ob-queued' : ''}`}>
+                <span className="ob-price">${q.price}</span>
+                <span className="ob-player">
+                  {PLAYER_NAMES[q.player].substring(0, 5)}
+                </span>
+                {q.player !== 0 && (
+                  <button
+                    className={`ob-accept-btn ${queued ? 'queued-btn' : 'buy-btn-sm'}`}
+                    onClick={() => onAccept(q.id)}
+                    title={queued ? 'Already queued — click to queue again' : 'Buy from this seller'}
+                  >
+                    {queued ? '✓ QUEUED' : 'BUY'}
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
@@ -183,6 +189,7 @@ function CommodityPanel({
   view,
   isPrep,
   queuedActions,
+  queuedAcceptIds,
   onPostBid,
   onPostAsk,
   onAccept,
@@ -242,6 +249,7 @@ function CommodityPanel({
         orderBook={view.orderBook}
         commodity={index}
         onAccept={isPrep ? () => {} : onAccept}
+        queuedAcceptIds={queuedAcceptIds}
       />
 
       <div className="cp-actions">
@@ -538,6 +546,11 @@ export default function App() {
                 (a.quoteId != null &&
                   view.orderBook[a.quoteId]?.commodity === j)
             );
+            const queuedAcceptIds = new Set(
+              pendingActions
+                .filter((a) => a.type === ActionType.ACCEPT)
+                .map((a) => a.quoteId)
+            );
             return (
               <CommodityPanel
                 key={j}
@@ -545,6 +558,7 @@ export default function App() {
                 view={view}
                 isPrep={isPrep}
                 queuedActions={queuedHere}
+                queuedAcceptIds={queuedAcceptIds}
                 onPostBid={handlePostBid}
                 onPostAsk={handlePostAsk}
                 onAccept={handleAccept}
@@ -555,28 +569,10 @@ export default function App() {
         </div>
 
         <div className="sidebar">
-          <PlayersSummary view={view} />
-          <div className="sidebar-section">
-            <div className="ps-title">TRADE LOG</div>
-            <TradeLog log={view.tradeLog} />
-          </div>
-          <div className="sidebar-section info-known">
-            <div className="ps-title">YOUR INTEL</div>
-            {view.infoSet.map((j) => (
-              <div key={j} className="intel-row">
-                <span
-                  className="intel-dot"
-                  style={{ background: COMMODITY_COLORS[j] }}
-                />
-                <span className="intel-name">{COMMODITY_NAMES[j]}</span>
-                <span className="intel-val">${view.knownValues[j]}</span>
-              </div>
-            ))}
-          </div>
           {pendingActions.length > 0 && (
-            <div className="sidebar-section pending-section">
+            <div className="sidebar-section pending-section pending-sticky">
               <div className="ps-title">
-                QUEUED ACTIONS ({pendingActions.length})
+                QUEUED ACTIONS ({pendingActions.length}) — ALL FIRE NEXT TICK
               </div>
               {pendingActions.map((a, i) => {
                 const commodity =
@@ -608,6 +604,24 @@ export default function App() {
               </button>
             </div>
           )}
+          <PlayersSummary view={view} />
+          <div className="sidebar-section">
+            <div className="ps-title">TRADE LOG</div>
+            <TradeLog log={view.tradeLog} />
+          </div>
+          <div className="sidebar-section info-known">
+            <div className="ps-title">YOUR INTEL</div>
+            {view.infoSet.map((j) => (
+              <div key={j} className="intel-row">
+                <span
+                  className="intel-dot"
+                  style={{ background: COMMODITY_COLORS[j] }}
+                />
+                <span className="intel-name">{COMMODITY_NAMES[j]}</span>
+                <span className="intel-val">${view.knownValues[j]}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
