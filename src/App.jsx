@@ -195,15 +195,12 @@ function CommodityPanel({
   const known = view.knownValues[index];
   const holding = view.inventory[index];
 
-  const myBidQuote =
-    view.activeBid != null ? view.orderBook[view.activeBid] : null;
-  const myAskQuote =
-    view.activeAsk != null ? view.orderBook[view.activeAsk] : null;
-
-  const hasBidOnThis =
-    myBidQuote && myBidQuote.commodity === index;
-  const hasAskOnThis =
-    myAskQuote && myAskQuote.commodity === index;
+  const myBidId = view.activeBids[index];
+  const myAskId = view.activeAsks[index];
+  const myBidQuote = myBidId != null ? view.orderBook[myBidId] : null;
+  const myAskQuote = myAskId != null ? view.orderBook[myAskId] : null;
+  const hasBidOnThis = !!myBidQuote;
+  const hasAskOnThis = !!myAskQuote;
 
   const isKnown = known !== undefined;
   const submitBid = () => {
@@ -284,7 +281,7 @@ function CommodityPanel({
                 Your bid: ${myBidQuote.price}
                 <button
                   className="cancel-btn"
-                  onClick={() => onCancel('bid')}
+                  onClick={() => onCancel(myBidQuote.id)}
                 >
                   ✕
                 </button>
@@ -295,7 +292,7 @@ function CommodityPanel({
                 Your ask: ${myAskQuote.price}
                 <button
                   className="cancel-btn"
-                  onClick={() => onCancel('ask')}
+                  onClick={() => onCancel(myAskQuote.id)}
                 >
                   ✕
                 </button>
@@ -494,10 +491,8 @@ export default function App() {
     setPendingAction({ type: ActionType.ACCEPT, quoteId });
   }, []);
 
-  const handleCancel = useCallback((side) => {
-    setPendingAction({
-      type: side === 'bid' ? ActionType.CANCEL_BID : ActionType.CANCEL_ASK,
-    });
+  const handleCancel = useCallback((quoteId) => {
+    setPendingAction({ type: ActionType.CANCEL_QUOTE, quoteId });
   }, []);
 
   // Render
@@ -531,7 +526,7 @@ export default function App() {
               pendingAction={
                 pendingAction &&
                 (pendingAction.commodity === j ||
-                  (pendingAction.type === ActionType.ACCEPT &&
+                  (pendingAction.quoteId != null &&
                     view.orderBook[pendingAction.quoteId]?.commodity === j))
                   ? pendingAction
                   : null

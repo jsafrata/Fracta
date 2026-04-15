@@ -131,8 +131,9 @@ export function initializeGame() {
     tick: 0,
     tradeLog: [],
     nextQuoteId: 1,
-    activeBids: Array(NUM_PLAYERS).fill(null), // quote id per player
-    activeAsks: Array(NUM_PLAYERS).fill(null),
+    // per player: { [commodity]: quoteId } — one live bid / ask per commodity
+    activeBids: Array.from({ length: NUM_PLAYERS }, () => ({})),
+    activeAsks: Array.from({ length: NUM_PLAYERS }, () => ({})),
     gameOver: false,
     scores: null,
   };
@@ -154,8 +155,8 @@ export function getPlayerView(state, playerId) {
     infoSet: [...state.infoSets[playerId]],
     orderBook: { ...state.orderBook },
     tradeLog: state.tradeLog,
-    activeBid: state.activeBids[playerId],
-    activeAsk: state.activeAsks[playerId],
+    activeBids: { ...state.activeBids[playerId] },
+    activeAsks: { ...state.activeAsks[playerId] },
     gameOver: state.gameOver,
     scores: state.scores,
     allCash: [...state.cash],
@@ -170,8 +171,7 @@ export const ActionType = {
   POST_BID: 'post_bid',
   POST_ASK: 'post_ask',
   ACCEPT: 'accept',
-  CANCEL_BID: 'cancel_bid',
-  CANCEL_ASK: 'cancel_ask',
+  CANCEL_QUOTE: 'cancel_quote', // payload: { quoteId }
 };
 
 // ─── Process Actions ─────────────────────────────────────────────
@@ -252,24 +252,20 @@ export function processActions(state, actions) {
 
     // Remove executed quote
     delete s.orderBook[qid];
-    if (s.activeBids[quote.player] === parseInt(qid))
-      s.activeBids[quote.player] = null;
-    if (s.activeAsks[quote.player] === parseInt(qid))
-      s.activeAsks[quote.player] = null;
+    if (quote.side === 'bid') delete s.activeBids[quote.player][quote.commodity];
+    else delete s.activeAsks[quote.player][quote.commodity];
   }
 
   // 2. Process cancels
   for (let i = 0; i < NUM_PLAYERS; i++) {
     const action = actions[i];
-    if (!action) continue;
-    if (action.type === ActionType.CANCEL_BID && s.activeBids[i] != null) {
-      delete s.orderBook[s.activeBids[i]];
-      s.activeBids[i] = null;
-    }
-    if (action.type === ActionType.CANCEL_ASK && s.activeAsks[i] != null) {
-      delete s.orderBook[s.activeAsks[i]];
-      s.activeAsks[i] = null;
-    }
+    if (!action || action.type !== ActionType.CANCEL_QUOTE) continue;
+    const qid = action.quoteId;
+    const quote = s.orderBook[qid];
+    if (!quote || quote.player !== i) continue;
+    delete s.orderBook[qid];
+    if (quote.side === 'bid') delete s.activeBids[i][quote.commodity];
+    else delete s.activeAsks[i][quote.commodity];
   }
 
   // 3. Process new posts — visible in next tick's view
@@ -282,14 +278,14 @@ export function processActions(state, actions) {
       if (price < PRICE_MIN || price > PRICE_MAX) continue;
       if (s.cash[i] < price) continue;
 
-      if (s.activeBids[i] != null) {
-        delete s.orderBook[s.activeBids[i]];
-      }
+      // Replace any existing bid on this commodity from this player
+      const existing = s.activeBids[i][commodity];
+      if (existing != null) delete s.orderBook[existing];
 
       const id = s.nextQuoteId++;
       const quote = { id, player: i, side: 'bid', commodity, price, tick: s.tick };
       s.orderBook[id] = quote;
-      s.activeBids[i] = id;
+      s.activeBids[i][commodity] = id;
     }
 
     if (action.type === ActionType.POST_ASK) {
@@ -297,26 +293,28 @@ export function processActions(state, actions) {
       if (price < PRICE_MIN || price > PRICE_MAX) continue;
       if (s.inventories[i][commodity] < 1) continue;
 
-      if (s.activeAsks[i] != null) {
-        delete s.orderBook[s.activeAsks[i]];
-      }
+      const existing = s.activeAsks[i][commodity];
+      if (existing != null) delete s.orderBook[existing];
 
       const id = s.nextQuoteId++;
       const quote = { id, player: i, side: 'ask', commodity, price, tick: s.tick };
       s.orderBook[id] = quote;
-      s.activeAsks[i] = id;
+      s.activeAsks[i][commodity] = id;
     }
   }
 
   // Clean up stale quotes (poster no longer has resources)
-  for (const [id, quote] of Object.entries(s.orderBook)) {
+  for (const [idStr, quote] of Object.entries(s.orderBook)) {
+    const id = parseInt(idStr);
     if (quote.side === 'ask' && s.inventories[quote.player][quote.commodity] < 1) {
-      delete s.orderBook[id];
-      if (s.activeAsks[quote.player] === parseInt(id)) s.activeAsks[quote.player] = null;
+      delete s.orderBook[idStr];
+      if (s.activeAsks[quote.player][quote.commodity] === id)
+        delete s.activeAsks[quote.player][quote.commodity];
     }
     if (quote.side === 'bid' && s.cash[quote.player] < quote.price) {
-      delete s.orderBook[id];
-      if (s.activeBids[quote.player] === parseInt(id)) s.activeBids[quote.player] = null;
+      delete s.orderBook[idStr];
+      if (s.activeBids[quote.player][quote.commodity] === id)
+        delete s.activeBids[quote.player][quote.commodity];
     }
   }
 
